@@ -2,7 +2,7 @@
 import sys
 
 a = Analysis(
-    ['sf2_converter/__main__.py'],
+    ['entry.py'],
     pathex=[],
     binaries=[],
     datas=[],
