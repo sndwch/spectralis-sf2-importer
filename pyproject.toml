@@ -1,0 +1,25 @@
+[project]
+name = "sf2-converter"
+version = "1.0.0"
+description = "SF2 to SLI/SLC Converter for Radikal Technologies Spectralis 2"
+requires-python = ">=3.12"
+dependencies = [
+    "pyside6>=6.10.2",
+    "sf2utils>=1.0.0",
+]
+
+[project.scripts]
+sf2-converter = "sf2_converter.__main__:main"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.19.0",
+]
