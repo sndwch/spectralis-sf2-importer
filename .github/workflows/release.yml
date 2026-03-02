@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: SF2Converter-macOS
+          - os: windows-latest
+            artifact: SF2Converter-Windows
+          - os: ubuntu-latest
+            artifact: SF2Converter-Linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      # --- Linux: install system deps ---
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libegl1 libgl1-mesa-glx \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+            libfuse2
+
+      # --- Build with PyInstaller ---
+      - name: Build with PyInstaller
+        run: uv run pyinstaller build.spec --noconfirm --clean
+
+      # --- macOS: create DMG ---
+      - name: Create DMG
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil create -volname "SF2Converter" \
+            -srcfolder dist/SF2Converter.app \
+            -ov -format UDZO \
+            dist/SF2Converter.dmg
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/SF2Converter.dmg
+
+      # --- Windows: create installer ---
+      - name: Create Windows installer
+        if: runner.os == 'Windows'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer.iss
+          options: /DAppVersion=${{ github.ref_name }}
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/SF2Converter-Setup.exe
+
+      # --- Linux: create AppImage ---
+      - name: Create AppImage
+        if: runner.os == 'Linux'
+        run: |
+          # Set up AppDir structure
+          mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
+
+          cp dist/SF2Converter AppDir/usr/bin/SF2Converter
+          chmod +x AppDir/usr/bin/SF2Converter
+
+          # Desktop entry
+          cat > AppDir/SF2Converter.desktop <<'EOF'
+          [Desktop Entry]
+          Name=SF2Converter
+          Exec=SF2Converter
+          Icon=sf2converter
+          Type=Application
+          Categories=AudioVideo;Audio;
+          EOF
+
+          # Placeholder icon (single pink pixel PNG)
+          printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82' \
+            > AppDir/usr/share/icons/hicolor/256x256/apps/sf2converter.png
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/sf2converter.png AppDir/sf2converter.png
+
+          # AppRun
+          cat > AppDir/AppRun <<'APPRUN'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          exec "$HERE/usr/bin/SF2Converter" "$@"
+          APPRUN
+          chmod +x AppDir/AppRun
+
+          # Download and run appimagetool
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool AppDir dist/SF2Converter-x86_64.AppImage
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/SF2Converter-x86_64.AppImage
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
