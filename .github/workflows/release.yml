@@ -15,7 +15,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: SF2Converter-macOS
+            artifact: SF2Converter-macOS-arm64
+            dmg_name: SF2Converter-arm64.dmg
+          - os: macos-13
+            artifact: SF2Converter-macOS-x86_64
+            dmg_name: SF2Converter-x86_64.dmg
           - os: windows-latest
             artifact: SF2Converter-Windows
           - os: ubuntu-latest
@@ -56,14 +60,14 @@ jobs:
           hdiutil create -volname "SF2Converter" \
             -srcfolder dist/SF2Converter.app \
             -ov -format UDZO \
-            dist/SF2Converter.dmg
+            dist/${{ matrix.dmg_name }}
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/SF2Converter.dmg
+          path: dist/${{ matrix.dmg_name }}
 
       # --- Windows: create installer ---
       - name: Create Windows installer
