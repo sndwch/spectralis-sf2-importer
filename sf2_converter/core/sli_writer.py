@@ -109,9 +109,9 @@ def _build_zone_entry(zone: ZoneMapping, zone_index: int) -> bytes:
     # extract each channel as a separate mono zone, they are the same.)
     entry[27] = zone.fine_tune & 0xFF
 
-    # Synth byte 56: pan position
+    # Synth byte 56: pan position (Spectralis uses inverted polarity vs SF2)
     if zone.pan != 0:
-        entry[60] = (zone.pan // 5) & 0xFF
+        entry[60] = (-zone.pan // 5) & 0xFF
 
     # Synth bytes 28-29 (entry[32-33]): decayModEnv as LE16 milliseconds
     if zone.decay_mod_env_tc != 0:

@@ -1,5 +1,6 @@
 """Orchestrates the SF2 to SLI/SLC conversion pipeline."""
 
+import logging
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -11,6 +12,10 @@ from ..utils.naming import make_abbreviation, guess_category
 
 ProgressCallback = Optional[Callable[[str, int], None]]
 
+# Factory SLI files max out at 44 zones. 128 (one per MIDI key) is a
+# safe upper bound — the Spectralis 2 hardware won't handle more.
+MAX_SLI_ZONES = 128
+
 
 def convert_to_sli(
     sf2_path: str | Path,
@@ -18,8 +23,10 @@ def convert_to_sli(
     output_dir: str | Path,
     progress: ProgressCallback = None,
     category: str = "Dsynth",
+    subcategory: str = "Other",
     auto_categorize: bool = False,
     category_map: dict[int, str] | None = None,
+    subcategory_map: dict[int, str] | None = None,
 ) -> list[Path]:
     """Convert selected SF2 instruments to individual SLI files.
 
@@ -41,20 +48,31 @@ def convert_to_sli(
             if progress:
                 progress(f"Extracting instrument {idx}...", int(step / total * 50))
 
-            # Determine category for this instrument
+            # Determine category and subcategory for this instrument
             if auto_categorize:
                 inst_category = category  # will be refined after extraction
+                inst_subcategory = subcategory
             elif category_map and idx in category_map:
                 inst_category = category_map[idx]
+                inst_subcategory = subcategory_map[idx] if subcategory_map and idx in subcategory_map else subcategory
             else:
                 inst_category = category
+                inst_subcategory = subcategory
 
-            instrument = reader.extract_instrument(idx, inst_category)
+            instrument = reader.extract_instrument(idx, inst_category, inst_subcategory)
 
             if auto_categorize:
                 inst_category = guess_category(instrument.name, fallback=category)
                 instrument.abbreviation = make_abbreviation(
-                    instrument.name, inst_category
+                    instrument.name, inst_category, inst_subcategory
+                )
+
+            zone_count = len(instrument.zones)
+            if zone_count > MAX_SLI_ZONES:
+                logging.warning(
+                    f"Instrument '{instrument.name}' has {zone_count} zones "
+                    f"(max recommended: {MAX_SLI_ZONES}). "
+                    f"The Spectralis 2 may not load this file."
                 )
 
             # Generate filename from instrument name
@@ -84,13 +102,18 @@ def convert_to_slc(
     output_path: str | Path,
     progress: ProgressCallback = None,
     category: str = "Percsn",
+    subcategory: str = "Other",
     auto_categorize: bool = False,
     category_map: dict[int, str] | None = None,
+    subcategory_map: dict[int, str] | None = None,
 ) -> Path:
     """Convert selected SF2 instruments to a single SLC file.
 
-    Each SF2 instrument becomes one SiIg chunk in the collection,
-    preserving its original key zones intact.
+    Each SF2 instrument becomes one instrument in the SLC collection,
+    preserving its zones (key splits / velocity layers).  Single-zone
+    instruments get their key and velocity ranges widened to 0-127 so
+    they respond to all notes, matching the most common factory SLC
+    layout.  Multi-zone instruments keep their original ranges intact.
 
     Args:
         category_map: Optional dict mapping instrument index -> category name.
@@ -108,21 +131,35 @@ def convert_to_slc(
             if progress:
                 progress(f"Extracting instrument {idx}...", int(step / total * 80))
 
-            # Determine category for this instrument
+            # Determine category and subcategory for this instrument
             if auto_categorize:
                 inst_category = category
+                inst_subcategory = subcategory
             elif category_map and idx in category_map:
                 inst_category = category_map[idx]
+                inst_subcategory = subcategory_map[idx] if subcategory_map and idx in subcategory_map else subcategory
             else:
                 inst_category = category
+                inst_subcategory = subcategory
 
-            instrument = reader.extract_instrument(idx, inst_category)
+            instrument = reader.extract_instrument(idx, inst_category, inst_subcategory)
 
             if auto_categorize:
                 inst_category = guess_category(instrument.name, fallback=category)
-                instrument.abbreviation = make_abbreviation(
-                    instrument.name, inst_category
-                )
+
+            instrument.abbreviation = make_abbreviation(
+                instrument.name, inst_category, inst_subcategory
+            )
+
+            # Single-zone instruments: widen to full 0-127 range so they
+            # respond to all notes (standard SLC drum/sample behavior).
+            # Multi-zone instruments: keep original key splits intact.
+            if len(instrument.zones) == 1:
+                zone = instrument.zones[0]
+                zone.key_range_low = 0
+                zone.key_range_high = 127
+                zone.vel_range_low = 0
+                zone.vel_range_high = 127
 
             slc_instruments.append(instrument)
 

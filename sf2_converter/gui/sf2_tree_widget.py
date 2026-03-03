@@ -1,199 +1,243 @@
-"""Tree widget for displaying SF2 SoundFont contents with checkboxes."""
+"""Flat instrument list widget with checkboxes and per-row category/subcategory."""
 
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QComboBox
+from PySide6.QtWidgets import (
+    QTableWidget, QTableWidgetItem, QComboBox, QHeaderView, QAbstractItemView,
+)
 from PySide6.QtCore import Qt, Signal
 
-from ..utils.naming import CATEGORIES
+from ..utils.naming import CATEGORIES, get_subcategory_names
 
 _CATEGORY_NAMES = list(CATEGORIES.keys())
 
 
-class SF2TreeWidget(QTreeWidget):
-    """Displays SF2 presets/instruments/samples in a tree with checkboxes."""
+class SF2TreeWidget(QTableWidget):
+    """Flat table of SF2 instruments with checkboxes and optional category combos."""
 
-    selection_changed = Signal()  # Emitted when checked items change
+    selection_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setHeaderLabels(["Name", "Zones", "Category"])
-        self.setColumnWidth(0, 280)
-        self.setColumnWidth(1, 50)
-        self.setColumnWidth(2, 90)
+        self.setColumnCount(4)
+        self.setHorizontalHeaderLabels(["Name", "Zones", "Category", "Subcategory"])
+        self.verticalHeader().setVisible(False)
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.Interactive)
+        self.setColumnWidth(2, 110)
+        self.setColumnWidth(3, 120)
+        header.setSortIndicatorShown(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+
         self.itemChanged.connect(self._on_item_changed)
         self._updating = False
-        self._category_combos = []  # Track all combo boxes for show/hide
-
-    def load_sf2(self, presets: list[dict], instruments: list[dict]):
-        """Populate tree from SF2 reader data."""
-        self._updating = True
-        self.clear()
         self._category_combos = []
+        self._subcategory_combos = []
+        self._sort_order = {}  # column -> Qt.AscendingOrder or Qt.DescendingOrder
 
-        # Build instrument lookup
-        inst_by_name = {}
-        for info in instruments:
-            inst_by_name[info["name"]] = info
+    def load_sf2(self, instruments: list[dict]):
+        """Populate table from instrument data."""
+        self._updating = True
+        self.setRowCount(0)
+        self._category_combos = []
+        self._subcategory_combos = []
 
-        # Add presets with their instruments (deduplicated)
-        used_instruments = set()
-        for preset in presets:
-            preset_item = QTreeWidgetItem(self)
-            preset_item.setText(0, f"[{preset['bank']:03d}:{preset['program']:03d}] {preset['name']}")
-            preset_item.setFlags(preset_item.flags() | Qt.ItemIsUserCheckable)
-            preset_item.setCheckState(0, Qt.Unchecked)
-            preset_item.setData(0, Qt.UserRole, {"type": "preset", "data": preset})
+        for row, info in enumerate(instruments):
+            self.insertRow(row)
 
-            # Add category combo for this preset
-            combo = QComboBox()
-            combo.addItems(_CATEGORY_NAMES)
-            combo.setCurrentText("Dsynth")
-            self.setItemWidget(preset_item, 2, combo)
-            self._category_combos.append(combo)
+            # Name with checkbox
+            name_item = QTableWidgetItem(info["name"])
+            name_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+            name_item.setCheckState(Qt.Unchecked)
+            name_item.setData(Qt.UserRole, {"type": "instrument", "data": info})
+            self.setItem(row, 0, name_item)
 
-            # Deduplicate instruments within this preset
-            seen_in_preset = set()
-            for inst_name in preset["instruments"]:
-                if inst_name in inst_by_name and inst_name not in seen_in_preset:
-                    seen_in_preset.add(inst_name)
-                    info = inst_by_name[inst_name]
-                    used_instruments.add(inst_name)
-                    inst_item = QTreeWidgetItem(preset_item)
-                    inst_item.setText(0, info["name"])
-                    inst_item.setText(1, str(info["zones"]))
-                    inst_item.setFlags(inst_item.flags() | Qt.ItemIsUserCheckable)
-                    inst_item.setCheckState(0, Qt.Unchecked)
-                    inst_item.setData(0, Qt.UserRole, {"type": "instrument", "data": info})
+            # Zones (read-only)
+            zones_item = QTableWidgetItem(str(info["zones"]))
+            zones_item.setTextAlignment(Qt.AlignCenter)
+            zones_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            self.setItem(row, 1, zones_item)
 
-        # Add any instruments not referenced by presets
-        unreferenced = [i for i in instruments if i["name"] not in used_instruments]
-        if unreferenced:
-            other_item = QTreeWidgetItem(self)
-            other_item.setText(0, "(Unreferenced Instruments)")
-            other_item.setFlags(other_item.flags() | Qt.ItemIsUserCheckable)
-            other_item.setCheckState(0, Qt.Unchecked)
+            # Category combo
+            cat_combo = QComboBox()
+            cat_combo.addItems(_CATEGORY_NAMES)
+            cat_combo.setCurrentText("Dsynth")
+            self.setCellWidget(row, 2, cat_combo)
+            self._category_combos.append(cat_combo)
 
-            combo = QComboBox()
-            combo.addItems(_CATEGORY_NAMES)
-            combo.setCurrentText("Dsynth")
-            self.setItemWidget(other_item, 2, combo)
-            self._category_combos.append(combo)
+            # Subcategory combo
+            sub_combo = QComboBox()
+            sub_combo.addItems(get_subcategory_names("Dsynth"))
+            if "Other" in get_subcategory_names("Dsynth"):
+                sub_combo.setCurrentText("Other")
+            self.setCellWidget(row, 3, sub_combo)
+            self._subcategory_combos.append(sub_combo)
 
-            for info in unreferenced:
-                inst_item = QTreeWidgetItem(other_item)
-                inst_item.setText(0, info["name"])
-                inst_item.setText(1, str(info["zones"]))
-                inst_item.setFlags(inst_item.flags() | Qt.ItemIsUserCheckable)
-                inst_item.setCheckState(0, Qt.Unchecked)
-                inst_item.setData(0, Qt.UserRole, {"type": "instrument", "data": info})
+            cat_combo.currentTextChanged.connect(
+                lambda cat, sc=sub_combo: self._update_subcategory_combo(cat, sc)
+            )
 
-        self.expandAll()
         self._updating = False
+        # Default sort by name A→Z
+        self._on_header_clicked(0)
 
     def set_categories_visible(self, visible: bool):
-        """Show or hide the per-preset category selectors."""
-        for combo in self._category_combos:
-            combo.setVisible(visible)
-        if visible:
-            self.setColumnWidth(2, 90)
-        else:
-            self.setColumnWidth(2, 0)
+        """Show or hide the per-instrument category and subcategory columns."""
+        self.setColumnHidden(2, not visible)
+        self.setColumnHidden(3, not visible)
 
-    def _on_item_changed(self, item: QTreeWidgetItem, column: int):
-        """Handle checkbox state changes - propagate to children."""
-        if self._updating or column != 0:
+    def _on_item_changed(self, item: QTableWidgetItem):
+        """Handle checkbox state changes."""
+        if self._updating:
             return
-
-        self._updating = True
-        state = item.checkState(0)
-
-        # Propagate to children
-        for i in range(item.childCount()):
-            item.child(i).setCheckState(0, state)
-
-        # Update parent state based on children
-        parent = item.parent()
-        if parent is not None:
-            checked = sum(
-                1 for i in range(parent.childCount())
-                if parent.child(i).checkState(0) == Qt.Checked
-            )
-            if checked == 0:
-                parent.setCheckState(0, Qt.Unchecked)
-            elif checked == parent.childCount():
-                parent.setCheckState(0, Qt.Checked)
-            else:
-                parent.setCheckState(0, Qt.PartiallyChecked)
-
-        self._updating = False
-        self.selection_changed.emit()
+        if item.column() == 0:
+            self.selection_changed.emit()
 
     def get_selected_instrument_indices(self) -> list[int]:
         """Return sorted list of selected instrument indices."""
-        indices = set()
-        self._collect_checked_indices(self.invisibleRootItem(), indices)
+        indices = []
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item and item.checkState() == Qt.Checked:
+                data = item.data(Qt.UserRole)
+                if data and data["type"] == "instrument":
+                    indices.append(data["data"]["index"])
         return sorted(indices)
 
-    def _collect_checked_indices(self, item: QTreeWidgetItem, indices: set):
-        """Recursively collect checked instrument indices."""
-        for i in range(item.childCount()):
-            child = item.child(i)
-            data = child.data(0, Qt.UserRole)
-            if data and data["type"] == "instrument":
-                if child.checkState(0) == Qt.Checked:
-                    indices.add(data["data"]["index"])
-            self._collect_checked_indices(child, indices)
+    @staticmethod
+    def _update_subcategory_combo(category: str, sub_combo: QComboBox):
+        """Repopulate a subcategory combo when its paired category changes."""
+        sub_combo.clear()
+        names = get_subcategory_names(category)
+        if names:
+            sub_combo.addItems(names)
+            if "Other" in names:
+                sub_combo.setCurrentText("Other")
 
-    def get_category_map(self) -> dict[int, str]:
-        """Return a mapping of instrument index -> category from the combo boxes.
-
-        Each instrument inherits the category from its parent preset item.
-        """
+    def get_category_map(self) -> tuple[dict[int, str], dict[int, str]]:
+        """Return mappings of instrument index -> category and index -> subcategory."""
         cat_map = {}
-        root = self.invisibleRootItem()
-        for i in range(root.childCount()):
-            parent = root.child(i)
-            combo = self.itemWidget(parent, 2)
-            if combo is None:
+        subcat_map = {}
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if not item:
                 continue
-            category = combo.currentText()
-            # Apply to all child instruments
-            for j in range(parent.childCount()):
-                child = parent.child(j)
-                data = child.data(0, Qt.UserRole)
-                if data and data["type"] == "instrument":
-                    cat_map[data["data"]["index"]] = category
-        return cat_map
+            data = item.data(Qt.UserRole)
+            if not data or data["type"] != "instrument":
+                continue
+            idx = data["data"]["index"]
+            cat_combo = self.cellWidget(row, 2)
+            sub_combo = self.cellWidget(row, 3)
+            if cat_combo:
+                cat_map[idx] = cat_combo.currentText()
+            if sub_combo:
+                subcat_map[idx] = sub_combo.currentText()
+        return cat_map, subcat_map
 
     def get_selected_info(self) -> list[dict]:
         """Return info dicts for all selected instruments."""
         result = []
-        indices = self.get_selected_instrument_indices()
-        self._collect_checked_info(self.invisibleRootItem(), indices, result)
-        return result
-
-    def _collect_checked_info(self, item: QTreeWidgetItem, indices: set, result: list):
-        for i in range(item.childCount()):
-            child = item.child(i)
-            data = child.data(0, Qt.UserRole)
-            if data and data["type"] == "instrument" and data["data"]["index"] in indices:
-                if data["data"] not in result:
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item and item.checkState() == Qt.Checked:
+                data = item.data(Qt.UserRole)
+                if data and data["type"] == "instrument":
                     result.append(data["data"])
-            self._collect_checked_info(child, indices, result)
+        return result
 
     def select_all(self):
         self._updating = True
-        self._set_all_checked(self.invisibleRootItem(), Qt.Checked)
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item:
+                item.setCheckState(Qt.Checked)
         self._updating = False
         self.selection_changed.emit()
 
     def select_none(self):
         self._updating = True
-        self._set_all_checked(self.invisibleRootItem(), Qt.Unchecked)
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item:
+                item.setCheckState(Qt.Unchecked)
         self._updating = False
         self.selection_changed.emit()
 
-    def _set_all_checked(self, item: QTreeWidgetItem, state):
-        for i in range(item.childCount()):
-            child = item.child(i)
-            child.setCheckState(0, state)
-            self._set_all_checked(child, state)
+    def _on_header_clicked(self, column: int):
+        """Sort rows when Name (0) or Zones (1) header is clicked."""
+        if column > 1:
+            return
+
+        # Toggle sort order
+        if column in self._sort_order:
+            prev = self._sort_order[column]
+            order = Qt.DescendingOrder if prev == Qt.AscendingOrder else Qt.AscendingOrder
+        else:
+            order = Qt.AscendingOrder
+        self._sort_order[column] = order
+        self.horizontalHeader().setSortIndicator(column, order)
+
+        # Gather all row data
+        rows = []
+        for row in range(self.rowCount()):
+            name_item = self.item(row, 0)
+            if not name_item:
+                continue
+            cat_combo = self.cellWidget(row, 2)
+            sub_combo = self.cellWidget(row, 3)
+            rows.append({
+                "name": name_item.text(),
+                "check": name_item.checkState(),
+                "user_data": name_item.data(Qt.UserRole),
+                "zones": self.item(row, 1).text(),
+                "category": cat_combo.currentText() if cat_combo else "Dsynth",
+                "subcategory": sub_combo.currentText() if sub_combo else "Other",
+            })
+
+        # Sort
+        reverse = order == Qt.DescendingOrder
+        if column == 0:
+            rows.sort(key=lambda r: r["name"].lower(), reverse=reverse)
+        else:
+            rows.sort(key=lambda r: int(r["zones"]) if r["zones"].isdigit() else 0, reverse=reverse)
+
+        # Repopulate
+        self._updating = True
+        self._category_combos.clear()
+        self._subcategory_combos.clear()
+
+        for row, data in enumerate(rows):
+            name_item = QTableWidgetItem(data["name"])
+            name_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+            name_item.setCheckState(data["check"])
+            name_item.setData(Qt.UserRole, data["user_data"])
+            self.setItem(row, 0, name_item)
+
+            zones_item = QTableWidgetItem(data["zones"])
+            zones_item.setTextAlignment(Qt.AlignCenter)
+            zones_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            self.setItem(row, 1, zones_item)
+
+            cat_combo = QComboBox()
+            cat_combo.addItems(_CATEGORY_NAMES)
+            cat_combo.setCurrentText(data["category"])
+            self.setCellWidget(row, 2, cat_combo)
+            self._category_combos.append(cat_combo)
+
+            sub_combo = QComboBox()
+            sub_names = get_subcategory_names(data["category"])
+            if sub_names:
+                sub_combo.addItems(sub_names)
+                sub_combo.setCurrentText(data["subcategory"])
+            self.setCellWidget(row, 3, sub_combo)
+            self._subcategory_combos.append(sub_combo)
+
+            cat_combo.currentTextChanged.connect(
+                lambda cat, sc=sub_combo: self._update_subcategory_combo(cat, sc)
+            )
+
+        self._updating = False

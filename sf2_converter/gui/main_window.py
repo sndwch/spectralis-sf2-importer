@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QObject
 from .sf2_tree_widget import SF2TreeWidget
 from .info_panel import InfoPanel
 from ..core.sf2_reader import SF2Reader
-from ..core.converter import convert_to_sli, convert_to_slc
+from ..core.converter import convert_to_sli, convert_to_slc, MAX_SLI_ZONES
 
 
 class ConvertWorker(QObject):
@@ -20,15 +20,18 @@ class ConvertWorker(QObject):
     finished = Signal(bool, str)
 
     def __init__(self, sf2_path, indices, fmt, output_path, category,
-                 auto_categorize, category_map=None):
+                 subcategory, auto_categorize, category_map=None,
+                 subcategory_map=None):
         super().__init__()
         self.sf2_path = sf2_path
         self.indices = indices
         self.fmt = fmt
         self.output_path = output_path
         self.category = category
+        self.subcategory = subcategory
         self.auto_categorize = auto_categorize
         self.category_map = category_map  # dict[int, str] or None
+        self.subcategory_map = subcategory_map  # dict[int, str] or None
 
     def run(self):
         try:
@@ -38,15 +41,19 @@ class ConvertWorker(QObject):
             if self.fmt == "sli":
                 paths = convert_to_sli(
                     self.sf2_path, self.indices, self.output_path, on_progress,
-                    category=self.category, auto_categorize=self.auto_categorize,
+                    category=self.category, subcategory=self.subcategory,
+                    auto_categorize=self.auto_categorize,
                     category_map=self.category_map,
+                    subcategory_map=self.subcategory_map,
                 )
                 self.finished.emit(True, f"Created {len(paths)} SLI file(s)")
             else:
                 convert_to_slc(
                     self.sf2_path, self.indices, self.output_path, on_progress,
-                    category=self.category, auto_categorize=self.auto_categorize,
+                    category=self.category, subcategory=self.subcategory,
+                    auto_categorize=self.auto_categorize,
                     category_map=self.category_map,
+                    subcategory_map=self.subcategory_map,
                 )
                 self.finished.emit(True, f"Created SLC file: {self.output_path}")
         except Exception as e:
@@ -59,7 +66,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SF2 to SLI/SLC Converter - Spectralis 2")
-        self.setMinimumSize(800, 500)
+        self.setMinimumSize(900, 500)
+        self.resize(1100, 600)
         self._sf2_path = None
         self._worker = None
         self._thread = None
@@ -100,7 +108,7 @@ class MainWindow(QMainWindow):
         self._info_panel.auto_categorize_changed.connect(self._on_auto_cat_changed)
         splitter.addWidget(self._info_panel)
 
-        splitter.setSizes([450, 350])
+        splitter.setSizes([700, 400])
         main_layout.addWidget(splitter)
 
     def _open_sf2(self):
@@ -115,9 +123,8 @@ class MainWindow(QMainWindow):
 
         try:
             with SF2Reader(self._sf2_path) as reader:
-                presets = reader.list_presets()
                 instruments = reader.list_instruments()
-                self._tree.load_sf2(presets, instruments)
+                self._tree.load_sf2(instruments)
                 self._select_all_btn.setEnabled(True)
                 self._select_none_btn.setEnabled(True)
 
@@ -136,7 +143,7 @@ class MainWindow(QMainWindow):
         self._tree.set_categories_visible(not auto)
 
     def _start_convert(self, fmt: str, output_path: str, category: str = "Percsn",
-                       auto_categorize: bool = False):
+                       subcategory: str = "Other", auto_categorize: bool = False):
         if self._sf2_path is None:
             QMessageBox.warning(self, "No File", "Please open an SF2 file first.")
             return
@@ -145,6 +152,23 @@ class MainWindow(QMainWindow):
         if not indices:
             QMessageBox.warning(self, "No Selection", "Please select at least one instrument.")
             return
+
+        # Warn about instruments with excessive zone counts (SLI only)
+        if fmt == "sli":
+            selected_info = self._tree.get_selected_info()
+            big = [(i["name"], i["zones"]) for i in selected_info if i["zones"] > MAX_SLI_ZONES]
+            if big:
+                names = "\n".join(f"  {name} ({z} zones)" for name, z in big)
+                reply = QMessageBox.warning(
+                    self, "High Zone Count",
+                    f"The following instrument(s) exceed {MAX_SLI_ZONES} zones and "
+                    f"may not load on the Spectralis 2:\n\n{names}\n\n"
+                    f"Continue anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    return
 
         if not output_path:
             output_path = str(self._sf2_path.parent)
@@ -159,10 +183,11 @@ class MainWindow(QMainWindow):
             if not out.is_dir() and out.suffix.lower() in (".sli", ".slc"):
                 output_path = str(out.parent)
 
-        # Get per-instrument category map from tree combos (used when not auto-categorizing)
+        # Get per-instrument category/subcategory maps from tree combos
         category_map = None
+        subcategory_map = None
         if not auto_categorize:
-            category_map = self._tree.get_category_map()
+            category_map, subcategory_map = self._tree.get_category_map()
 
         self._info_panel.set_converting(True)
 
@@ -170,7 +195,7 @@ class MainWindow(QMainWindow):
         self._thread = QThread()
         self._worker = ConvertWorker(
             str(self._sf2_path), indices, fmt, output_path, category,
-            auto_categorize, category_map,
+            subcategory, auto_categorize, category_map, subcategory_map,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

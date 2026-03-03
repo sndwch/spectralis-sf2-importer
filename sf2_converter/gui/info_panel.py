@@ -9,13 +9,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 
-from ..utils.naming import CATEGORIES
+from ..utils.naming import CATEGORIES, NO_SUBCATEGORY_CATEGORIES, get_subcategory_names
 
 
 class InfoPanel(QWidget):
     """Right-side panel with format selection, info display, and convert button."""
 
-    convert_requested = Signal(str, str, str, bool)  # format, output_path, category, auto_categorize
+    convert_requested = Signal(str, str, str, str, bool)  # format, output_path, category, subcategory, auto_categorize
     auto_categorize_changed = Signal(bool)  # emitted when checkbox toggles
 
     def __init__(self, parent=None):
@@ -53,6 +53,14 @@ class InfoPanel(QWidget):
         self._category_combo.setCurrentText("Dsynth")  # Default for SLI
         cat_row.addWidget(self._category_combo)
         cat_layout.addLayout(cat_row)
+        self._subcat_row = QHBoxLayout()
+        self._subcat_label = QLabel("Subcategory:")
+        self._subcat_row.addWidget(self._subcat_label)
+        self._subcategory_combo = QComboBox()
+        self._subcat_row.addWidget(self._subcategory_combo)
+        cat_layout.addLayout(self._subcat_row)
+        self._category_combo.currentTextChanged.connect(self._on_category_changed)
+        self._on_category_changed("Dsynth")  # populate initial subcategories
         self._auto_cat_checkbox = QCheckBox("Auto-categorize by name")
         self._auto_cat_checkbox.setToolTip(
             "Detect categories from sample names (e.g. 'kick' -> Kick).\n"
@@ -110,6 +118,18 @@ class InfoPanel(QWidget):
         layout.addWidget(self._status_label)
 
         layout.addStretch()
+
+    def _on_category_changed(self, category: str):
+        """Repopulate subcategory combo when category changes."""
+        self._subcategory_combo.clear()
+        names = get_subcategory_names(category)
+        has_subcategories = len(names) > 0
+        self._subcategory_combo.setVisible(has_subcategories)
+        self._subcat_label.setVisible(has_subcategories)
+        if has_subcategories:
+            self._subcategory_combo.addItems(names)
+            if "Other" in names:
+                self._subcategory_combo.setCurrentText("Other")
 
     def _on_format_changed(self, sli_checked: bool):
         """Update placeholder text and default category when format changes."""
@@ -174,8 +194,9 @@ class InfoPanel(QWidget):
         fmt = "slc" if self._slc_radio.isChecked() else "sli"
         output = self._output_edit.text()
         category = self._category_combo.currentText()
+        subcategory = self._subcategory_combo.currentText() if self._subcategory_combo.isVisible() else ""
         auto_cat = self._auto_cat_checkbox.isChecked()
-        self.convert_requested.emit(fmt, output, category, auto_cat)
+        self.convert_requested.emit(fmt, output, category, subcategory, auto_cat)
 
     def set_progress(self, message: str, percent: int):
         self._progress_bar.setVisible(True)
