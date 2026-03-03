@@ -54,6 +54,11 @@ def main():
         default=None,
         help="Spectralis category (default: Dsynth for SLI, Percsn for SLC)",
     )
+    parser.add_argument(
+        "--subcategory",
+        default=None,
+        help="Spectralis subcategory (e.g. Pad, Bass, Lead). Default: Other",
+    )
 
     args = parser.parse_args()
 
@@ -97,11 +102,13 @@ def main():
 
     print(f"Converting {len(indices)} instrument(s) from {input_path.name}...")
 
+    subcategory = args.subcategory or "Other"
+
     if args.format == "sli":
         category = args.category or "Dsynth"
         output_dir = Path(args.output) if args.output else Path.cwd()
         paths = convert_to_sli(input_path, indices, output_dir, progress_callback,
-                               category=category)
+                               category=category, subcategory=subcategory)
         print(f"\nCreated {len(paths)} SLI file(s):")
         for p in paths:
             print(f"  {p}")
@@ -112,7 +119,7 @@ def main():
         else:
             output_path = Path.cwd() / f"{input_path.stem}.SLC"
         path = convert_to_slc(input_path, indices, output_path, progress_callback,
-                              category=category)
+                              category=category, subcategory=subcategory)
         print(f"\nCreated SLC file: {path}")
 
 

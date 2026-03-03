@@ -52,13 +52,13 @@ DSYNTH_SUBCATEGORIES = {
     "Synth-Bass": "S",
     "Bass": "B",
     "Sequencer": "Q",
-    "Plug": "D",
+    "Plug": "U",         # confirmed: [DU] in SpectImp + D50Fantasia on hardware
     "Attack": "A",
-    "Release": "F",
+    "Release": "R",       # confirmed: [DR] in SpectImp
     "Lead": "L",
     "Pad": "P",
     "String": "G",
-    "Brass": "H",       # H for Horn (B taken by Bass)
+    "Brass": "F",         # confirmed: [DF] in SpectImp
     "Voice": "V",
     "Organ": "O",
     "Wind": "W",
@@ -67,7 +67,7 @@ DSYNTH_SUBCATEGORIES = {
     "Ethnic": "E",
     "Texture": "T",
     "Effects": "X",
-    "Other": "@",        # confirmed from "[D@] Other D-Synth"
+    "Other": "@",
 }
 
 # A-Synth subcategories (21 items)
@@ -77,13 +77,13 @@ ASYNTH_SUBCATEGORIES = {
     "Synth-Bass": "S",
     "Bass": "B",
     "Sequencer": "Q",
-    "Plug": "D",
+    "Plug": "U",
     "Attack": "A",
-    "Release": "F",
+    "Release": "R",
     "Lead": "L",
     "Pad": "P",
     "String": "G",
-    "Brass": "H",
+    "Brass": "F",
     "Voice": "V",
     "Organ": "O",
     "Wind": "W",
@@ -94,7 +94,7 @@ ASYNTH_SUBCATEGORIES = {
     "Multi": "M",        # confirmed from new_slc2.SLC binary 'MA' = [AM]
     "FB-Loop": "N",      # confirmed from new_slc2.SLC binary 'NA' = [AN]
     "Ext-In": "I",       # confirmed from new_slc2.SLC binary 'IA' = [AI]
-    "Other": "@",        # confirmed from "[A@] Other A-Synth"
+    "Other": "@",
 }
 
 # Genre-based subcategories (18 items)
@@ -102,23 +102,23 @@ ASYNTH_SUBCATEGORIES = {
 # Codes confirmed from factory SLC files (TR909, TR808, Rock, Nord, MF_ series).
 GENRE_SUBCATEGORIES = {
     "TR-alike": "T",     # confirmed from "[KT] TR-alike Kick" etc.
-    "Big Beat": "B",
-    "HipHop": "C",
+    "Big Beat": "B",     # confirmed: [KB] in SpectImp
+    "HipHop": "H",       # confirmed: [KH] from user/SpectImp
     "Electro": "E",
-    "Acid": "D",
-    "Techno": "F",
-    "House": "H",
-    "Funk": "G",
-    "Disco": "I",
+    "Acid": "A",          # confirmed: [KA] in SpectImp
+    "Techno": "C",        # confirmed: [KC] in SpectImp
+    "House": "U",         # confirmed: [KU] from user/SpectImp
+    "Funk": "F",          # confirmed: [KF] in SpectImp
+    "Disco": "D",         # confirmed: [KD] from user/SpectImp
     "Pop": "P",
     "80s": "8",
     "Natural": "N",
     "Rock": "R",
-    "Jazz": "J",
-    "Oldie": "O",
-    "World": "W",
+    "Jazz": "J",          # confirmed: [KJ] in SpectImp
+    "Oldie": "O",         # confirmed: [KO] in SpectImp
+    "World": "W",         # confirmed: [KW] in SpectImp
     "Effects": "X",
-    "Other": "@",        # confirmed from "[K@] Other Kick", "[S@]", "[H@]"
+    "Other": "@",
 }
 
 # Percussion subcategories (20 items) - unique instrument-based list

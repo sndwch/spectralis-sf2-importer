@@ -33,10 +33,38 @@ uv run sf2-converter
 
 ## Usage
 
-Run without arguments to open the GUI. Pass an SF2 file to convert from the command line:
+Run without arguments to open the GUI.
+
+### Command line
+
+See what instruments are in a file:
 
 ```
-sf2-converter input.sf2 --output-dir ./out --format sli
+sf2-converter FluidR3_GM.sf2 --list
+```
+
+Convert everything to SLI (one file per instrument):
+
+```
+sf2-converter FluidR3_GM.sf2 -o ./out
+```
+
+Convert specific instruments by index (use `--list` to find the numbers):
+
+```
+sf2-converter FluidR3_GM.sf2 -i 0 5 12 -o ./out
+```
+
+Export as an SLC collection instead:
+
+```
+sf2-converter FluidR3_GM.sf2 -f slc -o ./out/FluidR3.SLC
+```
+
+Set the Spectralis category and subcategory:
+
+```
+sf2-converter FluidR3_GM.sf2 -i 0 -c Dsynth --subcategory Pad -o ./out
 ```
 
 ## License

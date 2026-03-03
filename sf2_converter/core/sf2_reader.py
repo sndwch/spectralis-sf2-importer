@@ -69,7 +69,8 @@ class SF2Reader:
             })
         return result
 
-    def extract_instrument(self, instrument_index: int, category: str = "Percsn") -> InstrumentData:
+    def extract_instrument(self, instrument_index: int, category: str = "Percsn",
+                           subcategory: str | None = None) -> InstrumentData:
         """Extract a single SF2 instrument as an InstrumentData object.
 
         All samples are output as mono (channels=1), matching SpectImp.exe
@@ -126,7 +127,7 @@ class SF2Reader:
         return InstrumentData(
             name=truncate_name(inst.name, 32),
             zones=zones,
-            abbreviation=make_abbreviation(inst.name, category),
+            abbreviation=make_abbreviation(inst.name, category, subcategory),
         )
 
     def _read_extended_sample(self, sample) -> bytes:
